@@ -35,9 +35,10 @@ jobs:
         shell: bash
         env:
           PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/pw-install/node_modules/playwright/index.mjs
+          ROUNDS: ${{ inputs.rounds }}
         run: |
           fails=0
-          for i in $(seq 1 "${{ inputs.rounds }}"); do
+          for i in $(seq 1 "$ROUNDS"); do
             if node --test > "round-$i.log" 2>&1; then
               echo "round $i ok $(grep -E '^ℹ (pass|fail|skipped) ' "round-$i.log" | tr '\n' ' ')"
             else
@@ -46,7 +47,7 @@ jobs:
               grep -E '^not ok' "round-$i.log" | head -20
             fi
           done
-          echo "failed rounds: $fails / ${{ inputs.rounds }}"
+          echo "failed rounds: $fails / $ROUNDS"
           [ "$fails" -eq 0 ]
       - uses: actions/upload-artifact@v4
         if: always()
