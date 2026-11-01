@@ -1,0 +1,55 @@
+name: soak
+
+# Manual only. Repeats the whole suite, tier-2 browser tests included, on every
+# OS to surface intermittent failures that a single CI run cannot. Never on push.
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: 'full-suite runs per OS'
+        default: '20'
+        required: true
+
+jobs:
+  soak:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Same ad hoc install as ci.yml's tier2-browser job: the repo stays dependency-free.
+      - name: Install Playwright + Chromium (ad hoc, scratch dir, not a repo dependency)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw-install" && cd "$RUNNER_TEMP/pw-install"
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+      - name: Run the suite ${{ inputs.rounds }} times
+        shell: bash
+        env:
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/pw-install/node_modules/playwright/index.mjs
+        run: |
+          fails=0
+          for i in $(seq 1 "${{ inputs.rounds }}"); do
+            if node --test > "round-$i.log" 2>&1; then
+              echo "round $i ok $(grep -E '^ℹ (pass|fail|skipped) ' "round-$i.log" | tr '\n' ' ')"
+            else
+              fails=$((fails + 1))
+              echo "round $i FAILED"
+              grep -E '^not ok' "round-$i.log" | head -20
+            fi
+          done
+          echo "failed rounds: $fails / ${{ inputs.rounds }}"
+          [ "$fails" -eq 0 ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: soak-logs-${{ matrix.os }}
+          path: round-*.log
